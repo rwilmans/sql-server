@@ -1,4 +1,4 @@
-CREATE OR ALTER FUNCTION raoul.for_x_in (
+CREATE OR ALTER FUNCTION wh.for_x_in (
 	@array_of_strings VARCHAR(MAX),
 	@operation VARCHAR(200),
 	@concat VARCHAR(10) = ','
@@ -44,6 +44,11 @@ BEGIN
 	SELECT for_x_in('eerste,tweede','in1.$ = out1.$',DEFAULT);
 	SELECT for_x_in('eerste,tweede','in1.$ = out1.$','AND');
 	-- ---------------------------------------------------------------
+	
+	HISTORY:
+	--------
+	2022-08-15 RWS Adjusted for Brinks
+	
 	*/
 	DECLARE @result VARCHAR(MAX) = '';
 	SELECT @result = @result + CASE WHEN @result = '' THEN '' ELSE ' ' + @concat + ' ' END + REPLACE(@operation,'$',value)
@@ -52,11 +57,9 @@ BEGIN
 	RETURN @result;
 END
 ;
-GO
-;
 
 -- Function to mimic the distribution of records on temporal tables 
-CREATE OR ALTER PROCEDURE raoul.stp_autodistribute (
+CREATE OR ALTER  PROCEDURE wh.stp_autodistribute (
 	@trigger_id INTEGER = 0,
 	@insert_table_name VARCHAR(128) = '#inserted',
 	@debug CHAR(1) = 'N' -- Y/N
@@ -102,24 +105,31 @@ BEGIN
 	REMARKS:
 	--------
 	<table>__futr NOT YET implemented.
-	Function raoul.for_x_in REQUIRED!
+	Function wh.for_x_in REQUIRED!
+
+	HISTORY:
+	--------
+	YYYY-MM-DD Who	Change
+	2022-02-02 RWS	Separated the insertion into <table>__curr and the updating of the corresponding SEQUENCES. 
+					If no sequences were available (as is the case in an intermediate/linking table) the insert statement
+					would not run either. 
 
 	Example:
 	-- ---------------------------------------------------------------
-	DROP VIEW IF EXISTS raoul.double_pk;
-	DROP TABLE IF EXISTS raoul.double_pk__hist;
-	DROP TABLE IF EXISTS raoul.double_pk__curr;
-	DROP SEQUENCE IF EXISTS raoul.seq_double_pk__double_pk_1_id;
-	DROP SEQUENCE IF EXISTS raoul.seq_double_pk__double_pk_2_id;
+	DROP VIEW IF EXISTS wh.double_pk;
+	DROP TABLE IF EXISTS wh.double_pk__hist;
+	DROP TABLE IF EXISTS wh.double_pk__curr;
+	DROP SEQUENCE IF EXISTS wh.seq_double_pk__double_pk_1_id;
+	DROP SEQUENCE IF EXISTS wh.seq_double_pk__double_pk_2_id;
 
 	-- Sequence [meta].[seq_rule__rule_id]
-	CREATE SEQUENCE raoul.seq_double_pk__double_pk_1_id AS int START WITH 1 INCREMENT BY 1 CACHE;
-	CREATE SEQUENCE raoul.seq_double_pk__double_pk_2_id AS int START WITH 1 INCREMENT BY 1 CACHE;
+	CREATE SEQUENCE wh.seq_double_pk__double_pk_1_id AS int START WITH 1 INCREMENT BY 1 CACHE;
+	CREATE SEQUENCE wh.seq_double_pk__double_pk_2_id AS int START WITH 1 INCREMENT BY 1 CACHE;
 
 	-- The table representing the current (or most recent) situation 
-	CREATE TABLE raoul.double_pk__curr (
-		double_pk_1_id INT NOT NULL DEFAULT NEXT VALUE FOR raoul.seq_double_pk__double_pk_1_id,
-		double_pk_2_id INT NOT NULL DEFAULT NEXT VALUE FOR raoul.seq_double_pk__double_pk_2_id,
+	CREATE TABLE wh.double_pk__curr (
+		double_pk_1_id INT NOT NULL DEFAULT NEXT VALUE FOR wh.seq_double_pk__double_pk_1_id,
+		double_pk_2_id INT NOT NULL DEFAULT NEXT VALUE FOR wh.seq_double_pk__double_pk_2_id,
 		meta_valid_from DATE NOT NULL DEFAULT GETDATE(),
 		meta_insert_ts DATETIME2(3) NOT NULL DEFAULT GETDATE(),
 		meta_is_valid BIT NOT NULL DEFAULT 'TRUE',
@@ -129,7 +139,7 @@ BEGIN
 	);
 
 	-- The table with historical data (or past states)
-	CREATE TABLE raoul.double_pk__hist (
+	CREATE TABLE wh.double_pk__hist (
 		double_pk_1_id INT NOT NULL,
 		double_pk_2_id INT NOT NULL,
 		meta_valid_from DATE NOT NULL DEFAULT GETDATE(),
@@ -138,14 +148,14 @@ BEGIN
 		meta_is_historical AS CAST(1 AS BIT),
 		rest_of_vars VARCHAR(20) NOT NULL DEFAULT '---',
 		CONSTRAINT pk_double_pk_hist PRIMARY KEY CLUSTERED (meta_valid_from, double_pk_1_id, double_pk_2_id),
-		CONSTRAINT fk_double_pk_hist__double_pk_curr FOREIGN KEY (double_pk_1_id, double_pk_2_id) REFERENCES raoul.double_pk__curr (double_pk_1_id, double_pk_2_id) ON UPDATE CASCADE ON DELETE CASCADE--  NOT FOR REPLICATION
+		CONSTRAINT fk_double_pk_hist__double_pk_curr FOREIGN KEY (double_pk_1_id, double_pk_2_id) REFERENCES wh.double_pk__curr (double_pk_1_id, double_pk_2_id) ON UPDATE CASCADE ON DELETE CASCADE--  NOT FOR REPLICATION
 	);
 
 	GO
 	;
 
 	-- View combining both the current and historical states
-	CREATE OR ALTER VIEW raoul.double_pk AS
+	CREATE OR ALTER VIEW wh.double_pk AS
 	SELECT	double_pk_1_id,
 			double_pk_2_id,
 			meta_valid_from,
@@ -153,7 +163,7 @@ BEGIN
 			meta_is_valid,
 			meta_is_historical,
 			rest_of_vars
-	FROM raoul.double_pk__curr
+	FROM wh.double_pk__curr
 	UNION
 	SELECT	double_pk_1_id,
 			double_pk_2_id,
@@ -162,12 +172,12 @@ BEGIN
 			meta_is_valid,
 			meta_is_historical,
 			rest_of_vars
-	FROM raoul.double_pk__hist
+	FROM wh.double_pk__hist
 	;
 	
 	-- The actual INSTEAD - trigger on the VIEW
-	CREATE OR ALTER TRIGGER raoul.trg_double_pk__ins 
-		ON raoul.double_pk 
+	CREATE OR ALTER TRIGGER wh.trg_double_pk__ins 
+		ON wh.double_pk 
 		INSTEAD OF INSERT 
 	AS
 	BEGIN
@@ -179,7 +189,7 @@ BEGIN
 		FROM INSERTED;
 		;
 
-		EXECUTE raoul.stp_autodistribute @trigger_id = @@PROCID, @insert_table_name = '#inserted_double_pk';
+		EXECUTE wh.stp_autodistribute @trigger_id = @@PROCID, @insert_table_name = '#inserted_double_pk';
 	END
 	;
 	GO
@@ -187,59 +197,58 @@ BEGIN
 
 	-- --------------------------------
 	-- First record - new ID assigned
-	INSERT INTO raoul.double_pk (meta_valid_from, rest_of_vars)
+	INSERT INTO wh.double_pk (meta_valid_from, rest_of_vars)
 	VALUES ('20200101', 'AA')
 	;
 	-- --------------------------------
 	-- Additional records - new ID
-	INSERT INTO raoul.double_pk (meta_valid_from, rest_of_vars)
+	INSERT INTO wh.double_pk (meta_valid_from, rest_of_vars)
 	VALUES ('20200101', 'ZZ')
 	;
 	-- --------------------------------
 	-- New current state; copy to hist + update
-	INSERT INTO raoul.double_pk (double_pk_1_id, double_pk_2_id, meta_valid_from, rest_of_vars)
+	INSERT INTO wh.double_pk (double_pk_1_id, double_pk_2_id, meta_valid_from, rest_of_vars)
 	VALUES (1,1,'20200222', 'BB')
 	;
 	-- --------------------------------
 	-- New current state; copy to hist + update
-	INSERT INTO raoul.double_pk (double_pk_1_id, double_pk_2_id, meta_valid_from, rest_of_vars)
+	INSERT INTO wh.double_pk (double_pk_1_id, double_pk_2_id, meta_valid_from, rest_of_vars)
 	VALUES (1,1,'20200313', 'CC')
 	;
 	-- --------------------------------
 	-- Update historical record
-	INSERT INTO raoul.double_pk (double_pk_1_id, double_pk_2_id, meta_valid_from, rest_of_vars)
+	INSERT INTO wh.double_pk (double_pk_1_id, double_pk_2_id, meta_valid_from, rest_of_vars)
 	VALUES (1,1,'20200101', 'DD')
 	;
 	-- --------------------------------
 	-- Update current record
-	INSERT INTO raoul.double_pk (double_pk_1_id, double_pk_2_id, meta_valid_from, rest_of_vars)
+	INSERT INTO wh.double_pk (double_pk_1_id, double_pk_2_id, meta_valid_from, rest_of_vars)
 	VALUES (1,1,'20200313', 'QQ')
 	;
 	-- --------------------------------
 	-- List from-to for certain record
 	SELECT * 
-	FROM raoul.double_pk
+	FROM wh.double_pk
 	;
 
 	SELECT	double_pk_1_id, double_pk_2_id,
 			meta_valid_from,
 			LEAD(meta_valid_from,1,'9999/01/01') OVER (PARTITION BY double_pk_1_id, double_pk_2_id ORDER BY meta_valid_from) AS meta_valid_to,
 			d.*
-	FROM raoul.double_pk AS d
+	FROM wh.double_pk AS d
 	WHERE double_pk_1_id =1 AND double_pk_2_id = 1
 	;
 	-- --------------------------------
 	-- next-value to-be-generated by sequence 1 higher than MAX(id)?
-	INSERT INTO raoul.double_pk (double_pk_1_id, double_pk_2_id, meta_valid_from, rest_of_vars)
+	INSERT INTO wh.double_pk (double_pk_1_id, double_pk_2_id, meta_valid_from, rest_of_vars)
 	VALUES (5,1,'20200313', 'YY')
 	;
 	SELECT  CAST(CURRENT_VALUE AS INT) AS next_value
 	FROM SYS.sequences 
 	WHERE name = 'seq_double_pk__double_pk_1_id'
 	;
-	-- --------------------------------
-	
 	-- --------------------------------------------------------------
+
 	*/
 	
 	SET NOCOUNT ON;
@@ -317,6 +326,16 @@ BEGIN
 	CROSS APPLY (	SELECT PATINDEX('%[[]%].[[]%]%', e.dflt) AS pat_pos
 					) AS e2
 	;
+	
+	IF (@debug = 'Y') BEGIN
+		PRINT 'pk_column: ' + @pk_column;
+		PRINT 'pk_column_default: ' + @pk_column_default;
+		PRINT 'pk_column_type: ' + @pk_column_type;
+		PRINT 'seq_id_arr: ' + @seq_id_arr;
+		PRINT 'table_curr_id: ' + LTRIM(@table_curr_id);
+		PRINT 'table_hist_id: ' + LTRIM(@table_hist_id);
+	END;
+	
 
 	-- -----------------------------------------------------------------------------
 	-- Secondary PK column
@@ -352,6 +371,11 @@ BEGIN
 			kc.type = 'PK' -- Primary Key
 	;
 
+	IF (@debug = 'Y') BEGIN
+		PRINT 'sec_pk_col: ' + @sec_pk_col;
+		PRINT 'sec_pk_col_default: ' + @sec_pk_col_default;
+		PRINT 'sec_pk_col_type: ' + @sec_pk_col_type;
+	END;
 
 	-- -----------------------------------------------------------------------------
 	-- Meta info: timestamp for insertion (/update)
@@ -379,13 +403,17 @@ BEGIN
 	-- -----------------------------------------------------------------------------
 	-- Rest of columns
 	SELECT	@non_pk_cols = @non_pk_cols + IIF(@non_pk_cols = '','',',') + name,
-			@non_pk_cols_defaults = @non_pk_cols_defaults + IIF(@non_pk_cols_defaults = '','',',') + name + ' = COALESCE(' + name + ',' + OBJECT_DEFINITION(default_object_id) + ')' 
+			@non_pk_cols_defaults = @non_pk_cols_defaults + IIF(default_object_id = 0,'', IIF(@non_pk_cols_defaults = '','',',') + name + ' = COALESCE(' + name + ',' + OBJECT_DEFINITION(default_object_id) + ')')
 	FROM SYS.columns
 	WHERE	object_id = @table_curr_id AND
 			',' + @pk_column + ',' + @sec_pk_col + ',' + @meta_ts + ',' NOT LIKE '%,' + name + ',%' AND --So, NONE of so-far found special columns
 			is_computed = 0
 	ORDER BY column_id
 	; 
+
+	IF (@debug = 'Y') BEGIN
+		PRINT 'non_pk_cols: ' + @non_pk_cols;
+	END;
 
 	/* ************************************************************************************************ */
 	/* Check if necessary columns are given (aside from key columns, for which we will insert defaults) */
@@ -412,44 +440,44 @@ BEGIN
 	-- NEW RECORD, safe history
 	SET @sql = N'   CREATE TABLE #insert_ids (' +@pk_column_type + ');
 					INSERT INTO ' + @table_hist + ' (' + @pk_column + ', ' + @sec_pk_col +  ', ' + @meta_ts +  ', ' + @non_pk_cols + ')
-					OUTPUT ' + raoul.for_x_in (@pk_column, 'INSERTED.$',DEFAULT) + '
+					OUTPUT ' + wh.for_x_in (@pk_column, 'INSERTED.$',DEFAULT) + '
 					INTO #insert_ids (' + @pk_column + ')
 					SELECT	' +
-							raoul.for_x_in (@pk_column, 'incur.$',DEFAULT) + ', '+ 
-							raoul.for_x_in (@sec_pk_col, 'incur.$',DEFAULT) + ', '+ 
-							raoul.for_x_in (@meta_ts, 'incur.$',DEFAULT) + ', '+ 
-							raoul.for_x_in (@non_pk_cols, 'incur.$',DEFAULT) + '
+							wh.for_x_in (@pk_column, 'incur.$',DEFAULT) + ', '+ 
+							wh.for_x_in (@sec_pk_col, 'incur.$',DEFAULT) + ', '+ 
+							wh.for_x_in (@meta_ts, 'incur.$',DEFAULT) + ', '+ 
+							wh.for_x_in (@non_pk_cols, 'incur.$',DEFAULT) + '
 					FROM	' + @insert_table_name + ' AS ins 
 					INNER JOIN
 							' + @table_curr + ' AS incur
 					ON	' + 
 						-- ..._id  - so, id MUST already exist!
-						raoul.for_x_in(@pk_column,'ins.$ = incur.$','AND') +  
+						wh.for_x_in(@pk_column,'ins.$ = incur.$','AND') +  
 						' AND ' +  
-						raoul.for_x_in(@sec_pk_col,'ins.$ > incur.$','AND') +  ' -- meta_valid_from AFTER current state, so NEW current state!
+						wh.for_x_in(@sec_pk_col,'ins.$ > incur.$','AND') +  ' -- meta_valid_from AFTER current state, so NEW current state!
 					WHERE	BINARY_CHECKSUM(' + 
-											raoul.for_x_in(@non_pk_cols,'ins.$',DEFAULT) + 
+											wh.for_x_in(@non_pk_cols,'ins.$',DEFAULT) + 
 											') -- all other columns
 							!=  
 							BINARY_CHECKSUM(' + 
-											raoul.for_x_in(@non_pk_cols,'incur.$',DEFAULT) + 
+											wh.for_x_in(@non_pk_cols,'incur.$',DEFAULT) + 
 											')
 					;
 
 					/*  ... and then update current state to new state */ 
 					UPDATE cur
 					SET ' + 
-						raoul.for_x_in(@sec_pk_col,'$ = new.$',DEFAULT) + ', ' +  
+						wh.for_x_in(@sec_pk_col,'$ = new.$',DEFAULT) + ', ' +  
 						@meta_ts + ' = GETDATE(), ' +
-						raoul.for_x_in(@non_pk_cols,'$ = new.$',DEFAULT) + '
+						wh.for_x_in(@non_pk_cols,'$ = new.$',DEFAULT) + '
 					
 					FROM	' + @table_curr + ' AS cur
 					INNER JOIN
 							#insert_ids AS ins 
-					ON ' + raoul.for_x_in(@pk_column,'cur.$ = ins.$','AND') + '
+					ON ' + wh.for_x_in(@pk_column,'cur.$ = ins.$','AND') + '
 					INNER JOIN 
 							' + @insert_table_name + ' AS new
-					ON ' + raoul.for_x_in(@pk_column,'ins.$ = new.$','AND') + '
+					ON ' + wh.for_x_in(@pk_column,'ins.$ = new.$','AND') + '
 					;
 					/* Drop TEMP table #insert_ids */
 					DROP TABLE IF EXISTS #insert_ids;
@@ -467,19 +495,19 @@ BEGIN
 	-- UPDATE CURRENT RECORD
 	SET @sql = N'	UPDATE incur
 					SET ' + @meta_ts + ' = GETDATE(), ' + 
-						raoul.for_x_in(@non_pk_cols,'$ = ins.$',DEFAULT) + '
+						wh.for_x_in(@non_pk_cols,'$ = ins.$',DEFAULT) + '
 					FROM	' + @table_curr + ' AS incur
 					INNER JOIN
 							' + @insert_table_name + ' AS ins 							
 					ON	' + 
 						-- ..._id  - so, id MUST already exist!
-						raoul.for_x_in(@pk_column,'ins.$ = incur.$','AND') +  
+						wh.for_x_in(@pk_column,'ins.$ = incur.$','AND') +  
 						' AND ' + 
-						raoul.for_x_in(@sec_pk_col,'ins.$ = incur.$','AND') + '   --  meta_valid_from EQUAL TO current state
+						wh.for_x_in(@sec_pk_col,'ins.$ = incur.$','AND') + '   --  meta_valid_from EQUAL TO current state
 					WHERE	-- all other columns
-							BINARY_CHECKSUM(' + raoul.for_x_in(@non_pk_cols,'ins.$',DEFAULT) + ') 
+							BINARY_CHECKSUM(' + wh.for_x_in(@non_pk_cols,'ins.$',DEFAULT) + ') 
 							!=  
-							BINARY_CHECKSUM(' + raoul.for_x_in(@non_pk_cols,'incur.$',DEFAULT) + ')
+							BINARY_CHECKSUM(' + wh.for_x_in(@non_pk_cols,'incur.$',DEFAULT) + ')
 					;
 					';
 	IF (@debug = 'Y') BEGIN
@@ -494,25 +522,25 @@ BEGIN
 	-- UPDATE HISTORY
 	SET @sql = N'	UPDATE inhist
 					SET ' + @meta_ts + ' = GETDATE(), ' + 
-						raoul.for_x_in(@non_pk_cols,'$ = ins.$',DEFAULT) + '
+						wh.for_x_in(@non_pk_cols,'$ = ins.$',DEFAULT) + '
 					FROM	' + @insert_table_name + ' AS ins 
 					INNER JOIN
 							' + @table_curr + ' AS incur
 					ON	' + 
 						-- ..._id  - so, id MUST already exist!
-						raoul.for_x_in(@pk_column,'ins.$ = incur.$','AND') + 
+						wh.for_x_in(@pk_column,'ins.$ = incur.$','AND') + 
 						' AND '+ 
 						--  meta_valid_from BEFORE current state
-						raoul.for_x_in(@sec_pk_col,'ins.$ < incur.$','AND')+ '   -- meta_valid_from BEFORE current state, so historical
+						wh.for_x_in(@sec_pk_col,'ins.$ < incur.$','AND')+ '   -- meta_valid_from BEFORE current state, so historical
 					INNER JOIN
 							' + @table_hist + ' AS inhist
 					ON ' + 
-						raoul.for_x_in(@pk_column,'ins.$ = inhist.$','AND') + ' AND '+ 
+						wh.for_x_in(@pk_column,'ins.$ = inhist.$','AND') + ' AND '+ 
 						-- meta_valid_from exactly as in __hist-table!
-						raoul.for_x_in(@sec_pk_col,'ins.$ = inhist.$','AND') + ' -- meta_valid_from EQUAL to historical state
-					WHERE	BINARY_CHECKSUM(' + raoul.for_x_in(@non_pk_cols,'ins.$',DEFAULT) + ') 
+						wh.for_x_in(@sec_pk_col,'ins.$ = inhist.$','AND') + ' -- meta_valid_from EQUAL to historical state
+					WHERE	BINARY_CHECKSUM(' + wh.for_x_in(@non_pk_cols,'ins.$',DEFAULT) + ') 
 							!=  
-							BINARY_CHECKSUM(' + raoul.for_x_in(@non_pk_cols,'inhist.$',DEFAULT) + ')
+							BINARY_CHECKSUM(' + wh.for_x_in(@non_pk_cols,'inhist.$',DEFAULT) + ')
 					;
 					';
 	IF (@debug = 'Y') BEGIN
@@ -524,27 +552,27 @@ BEGIN
 	-- unknown HISTORICAL 
 	SET @sql = N'   INSERT INTO ' + @table_hist + ' (' + @pk_column + ', ' + @sec_pk_col + ', ' + @meta_ts +  ', ' + @non_pk_cols + ')
 					SELECT  ' + 
-							raoul.for_x_in(@pk_column,'ins.$',DEFAULT) + ', ' +  
-							raoul.for_x_in(@sec_pk_col,'ins.$',DEFAULT) + ', ' +  
-							raoul.for_x_in(@meta_ts,'ins.$',DEFAULT) + ', ' +  
-							raoul.for_x_in(@non_pk_cols,'ins.$',DEFAULT) + '
+							wh.for_x_in(@pk_column,'ins.$',DEFAULT) + ', ' +  
+							wh.for_x_in(@sec_pk_col,'ins.$',DEFAULT) + ', ' +  
+							wh.for_x_in(@meta_ts,'ins.$',DEFAULT) + ', ' +  
+							wh.for_x_in(@non_pk_cols,'ins.$',DEFAULT) + '
 					FROM	' + @insert_table_name + ' AS ins 
 					INNER JOIN
 							' + @table_curr + ' AS cur
 					ON	' + 
-						raoul.for_x_in(@pk_column,'ins.$ = cur.$','AND') + ' AND ' + --  ..._id
-						raoul.for_x_in(@sec_pk_col,'ins.$ < cur.$','AND') + ' AND ' +
-						raoul.for_x_in(@sec_pk_col,'ins.$ IS NOT NULL','AND') + ' 
+						wh.for_x_in(@pk_column,'ins.$ = cur.$','AND') + ' AND ' + --  ..._id
+						wh.for_x_in(@sec_pk_col,'ins.$ < cur.$','AND') + ' AND ' +
+						wh.for_x_in(@sec_pk_col,'ins.$ IS NOT NULL','AND') + ' 
 					WHERE	' + 
-							raoul.for_x_in(@pk_column,'ins.$ IS NOT NULL','AND') + ' AND
+							wh.for_x_in(@pk_column,'ins.$ IS NOT NULL','AND') + ' AND
 							NOT EXISTS (SELECT 1 
 										FROM  ' + @table_hist + ' AS inhist
 										WHERE	' + 
 												-- xxx_id
-												raoul.for_x_in(@pk_column,'ins.$ = inhist.$','AND') + 
+												wh.for_x_in(@pk_column,'ins.$ = inhist.$','AND') + 
 												' AND ' + 
 												-- meta_valid_from
-												raoul.for_x_in(@sec_pk_col,'ins.$ = inhist.$','AND') + ' 
+												wh.for_x_in(@sec_pk_col,'ins.$ = inhist.$','AND') + ' 
 										)
 					;';
 	IF (@debug = 'Y') BEGIN
@@ -562,14 +590,19 @@ BEGIN
 							@non_pk_cols + '
 					FROM	' + @insert_table_name + ' AS ins 
 					WHERE	' + 
-							raoul.for_x_in(@pk_column,'$ IS NOT NULL','AND') + ' AND
+							wh.for_x_in(@pk_column,'$ IS NOT NULL','AND') + ' AND
 							NOT EXISTS (SELECT 1
 										FROM ' + @table_curr + ' AS incur
-										WHERE ' + raoul.for_x_in(@pk_column,'ins.$ = incur.$','AND') + '
+										WHERE ' + wh.for_x_in(@pk_column,'ins.$ = incur.$','AND') + '
 										)
-					;
+					;'
+	IF (@debug = 'Y') BEGIN
+		PRINT @sql;
+	END;
+	EXECUTE (@sql);
 
-					DECLARE @next_val INT = 1;
+	-- As (a) non-missing ID(s) has/have been given, the corresponding SEQUENCES may have to be updated to reflect these new IDs.
+	SET @sql = N'   DECLARE @next_val INT = 1;
 					DECLARE @curr_val INT = 1;
 
 					DECLARE @seq_id INT;
@@ -625,11 +658,11 @@ BEGIN
 	-- Completely new record, ID is NULL --> insert!
 	SET @sql = N'   INSERT INTO ' + @table_curr + ' (' + @sec_pk_col +  ', ' + @meta_ts +  ', ' + @non_pk_cols + ')
 					SELECT	' + 
-							raoul.for_x_in(@sec_pk_col,'ins.$',DEFAULT) + ', ' + 
-							raoul.for_x_in(@meta_ts,'ins.$',DEFAULT) + ', '	+ 
-							raoul.for_x_in(@non_pk_cols,'ins.$',DEFAULT) + '
+							wh.for_x_in(@sec_pk_col,'ins.$',DEFAULT) + ', ' + 
+							wh.for_x_in(@meta_ts,'ins.$',DEFAULT) + ', '	+ 
+							wh.for_x_in(@non_pk_cols,'ins.$',DEFAULT) + '
 					FROM	' + @insert_table_name + ' AS ins
-					WHERE	' + raoul.for_x_in(@pk_column,'$ IS NULL','AND') + ' 
+					WHERE	' + wh.for_x_in(@pk_column,'$ IS NULL','AND') + ' 
 					;';
 	IF (@debug = 'Y') BEGIN
 		PRINT @sql;
@@ -637,6 +670,4 @@ BEGIN
 	EXECUTE (@sql);
 
 END
-;
-GO
 ;
